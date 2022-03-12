@@ -11,7 +11,7 @@ import (
 //Any new path from dolarSi must be added here.
 //The map is: {request path: DolarSi xml parsed path}
 var DolarSiPaths map[string]string = map[string]string{
-	"oficial":         "Dolar.casa344",
+	"oficial":         "cotiza.Dolar.casa344.compra",
 	"blue":            "Dolar.casa380",
 	"BNABillete":      "Dolar.casa47",
 	"BCRAReferencia":  "Dolar.casa49",
@@ -45,13 +45,11 @@ func parseDolarSi() (*gabs.Container, error) {
 
 	j, err := xj.Convert(resp.Body)
 	if err != nil {
-		fmt.Println("err")
 		return nil, err
 	}
 	parsed, err := gabs.ParseJSON(j.Bytes())
 
 	if err != nil {
-		fmt.Println("err")
 		return nil, err
 	}
 
@@ -61,6 +59,7 @@ func parseDolarSi() (*gabs.Container, error) {
 //This can access any value inside the xml parsed
 //Isnt bounded to dolar value
 func DolarSiValue(path string) (string, error) {
+	fmt.Println(path)
 	var value string
 	var ok bool
 
@@ -70,7 +69,7 @@ func DolarSiValue(path string) (string, error) {
 		return "", err
 	}
 
-	value, ok = parsed.Path(path).Data().(string)
+	value, ok = parsed.Path("cotiza.Dolar.casa344.compra").Data().(string)
 
 	if !ok {
 		return "", &NonValidPath{}
@@ -83,17 +82,17 @@ func DolarSiValue(path string) (string, error) {
 //buy and sell value at the same time. Making clearer
 //error handling. [Buy, Sell]
 func DolarSiBuySell(path string) ([]string, error) {
-	buy, err := DolarSiValue(path + ".compra")
+	buy, err := DolarSiValue(path)
 
 	if err != nil {
 		return []string{""}, err
 	}
 
-	sell, err := DolarSiValue(path + ".venta")
+	// sell, err := DolarSiValue(path + ".venta")
 
-	if err != nil {
-		return []string{""}, err
-	}
+	// if err != nil {
+	// 	return []string{""}, err
+	// }
 
-	return []string{buy, sell}, nil
+	return []string{buy, buy}, nil
 }
