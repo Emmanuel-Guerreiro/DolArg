@@ -9,6 +9,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/joho/godotenv"
 )
 
@@ -35,56 +36,67 @@ func main() {
 	}
 
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
-		Password: "", // no password set
-		DB:       0,  // use default DB
+		Addr:     os.Getenv("REDISADDR"),
+		Password: os.Getenv("REDISPASS"),
+		DB:       0,
 	})
 
 	app := fiber.New()
 
 	app.Use(cors.New())
+	app.Use(logger.New(logger.Config{
+		Format: "[${ip}]:${port} ${status} - ${method} ${path}\n",
+	}))
 
 	app.Get("/:path", func(ctx *fiber.Ctx) error {
 		reqPath := ctx.Params("path")
 
-		val, err := rdb.Get(gctx, reqPath).Result()
-		fmt.Println("val,", val)
+		//val = map[reqPath]value
+		val, err := rdb.HGetAll(gctx, reqPath).Result()
 
 		//Fails if there is no key or there is a redis error
 		if err != nil {
 			//If there is no key will look for it at the API, parse it,
 			//cache it and send it to the client
-			if err.Error() == "redis: nil" {
-				valuePath := DolarSiPaths[reqPath]
-				fmt.Println(valuePath)
-				//dolar => [buy, sell]
-				dolar, err := DolarSiBuySell(valuePath)
 
-				if err != nil {
-					//The path isnt at the DolarSiPaths or the api has changed
-					if err.Error() == "Non valid path" {
-						return ctx.Status(fiber.StatusNotFound).JSON("Not found")
-					}
+			fmt.Println(err)
+			//Any other redis error will be handled as 500
+			return ctx.Status(fiber.StatusInternalServerError).JSON("Could not resolve")
 
-					return ctx.Status(fiber.StatusInternalServerError).JSON("Could not resolve")
+		}
+		//Values are cached as Redis Hashes. The redis client
+		//retrieves them as a map. If there is nothing cached =>
+		//is an empty map
+		if len(val) == 0 {
+			valuePath := DolarSiPaths[reqPath]
+			//dolar => [buy, sell]
+			dolar, err := DolarSiBuySell(valuePath)
+
+			if err != nil {
+				//The path isnt at the DolarSiPaths or the api has changed
+				if err.Error() == "Non valid path" {
+					return ctx.Status(fiber.StatusNotFound).JSON("Not found")
 				}
 
-				return ctx.Status(fiber.StatusOK).JSON(DolarResponse{
-					Date:   ISOTimestamp(),
-					Compra: dolar[0],
-					Venta:  dolar[1],
-				})
-			} else {
-				//Any other redis error will be handled as 500
 				return ctx.Status(fiber.StatusInternalServerError).JSON("Could not resolve")
 			}
+
+			if rdb.HSet(gctx, reqPath, "buy", dolar[0], "sell", dolar[1]).Err() != nil {
+				fmt.Println("Error at caching")
+			}
+
+			return ctx.Status(fiber.StatusOK).JSON(DolarResponse{
+				Date:   ISOTimestamp(),
+				Compra: dolar[0],
+				Venta:  dolar[1],
+			})
 		}
 
-		//If err == nil => The value is cached and returned
+		//If err == nil && len(map) != 0 => The value is cached and returned
 		return ctx.Status(fiber.StatusOK).JSON(DolarResponse{
 			Date:   ISOTimestamp(),
-			Compra: "10",
-			Venta:  "10",
+			Compra: val["buy"],
+			Venta:  val["sell"],
 		})
 
 	})
